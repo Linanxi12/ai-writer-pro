@@ -137,11 +137,26 @@ const ACTION_PROMPTS = {
   reply: 'Write a thoughtful, appropriate reply to this message. Only return the reply:\n\n'
 };
 
-// --- Email: Resend ---
+// --- Email: QQ Mail SMTP (国内直连，免费500封/天) ---
+const nodemailer = require('nodemailer');
+
+function createTransporter() {
+  const user = process.env.QQ_EMAIL;
+  const pass = process.env.QQ_SMTP_CODE; // QQ邮箱授权码，不是密码
+  if (!user || !pass) return null;
+
+  return nodemailer.createTransport({
+    host: 'smtp.qq.com',
+    port: 465,
+    secure: true, // SSL
+    auth: { user, pass }
+  });
+}
+
 async function sendWelcomeEmail(toEmail, licenseKey, plan) {
-  const resendKey = process.env.RESEND_API_KEY;
-  if (!resendKey) {
-    console.log('⚠️ RESEND_API_KEY not set, skipping email to', toEmail);
+  const transporter = createTransporter();
+  if (!transporter) {
+    console.log('⚠️ QQ_EMAIL or QQ_SMTP_CODE not set, skipping email to', toEmail);
     return;
   }
 
@@ -161,38 +176,22 @@ async function sendWelcomeEmail(toEmail, licenseKey, plan) {
   </div>
   <h3>📥 How to Install:</h3>
   <ol>
-    <li><a href="https://github.com/Linanxi12/ai-writer-pro/raw/main/extension.zip" style="color:#6366f1;">Download the extension (ZIP)</a></li>
-    <li>Unzip the file</li>
-    <li>Open Chrome → <code>chrome://extensions/</code></li>
-    <li>Enable <strong>Developer mode</strong> (top right)</li>
-    <li>Click <strong>Load unpacked</strong> → select the unzipped folder</li>
-    <li>Click the extension icon → enter your License Key above</li>
-    <li>Also enter your free DeepSeek API key from <a href="https://platform.deepseek.com" style="color:#6366f1;">platform.deepseek.com</a></li>
+    <li><a href="https://github.com/Linanxi12/ai-writer-pro/raw/main/extension.zip" style="color:#6366f1;">Download extension.zip</a></li>
+    <li>Unzip → Chrome → chrome://extensions/ → Developer mode → Load unpacked</li>
+    <li>Click extension icon → enter License Key + DeepSeek key</li>
   </ol>
-  <hr style="border-color:#e2e8f0;margin:24px 0;">
-  <p style="color:#94a3b8;font-size:12px;">AI Writer Pro · <a href="https://linanxi12.github.io/ai-writer-pro/" style="color:#6366f1;">Website</a> · Reply to this email for support</p>
+  <p style="color:#94a3b8;font-size:12px;">AI Writer Pro · <a href="https://linanxi12.github.io/ai-writer-pro/">Website</a></p>
 </body>
 </html>`;
 
   try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + resendKey
-      },
-      body: JSON.stringify({
-        from: 'AI Writer Pro <noreply@aiwriter.pro>',
-        to: toEmail,
-        subject: '✨ Your AI Writer Pro License Key',
-        html: html
-      })
+    await transporter.sendMail({
+      from: process.env.QQ_EMAIL,
+      to: toEmail,
+      subject: '✨ Your AI Writer Pro License Key - ' + plan.toUpperCase(),
+      html
     });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      console.error('Resend API error:', JSON.stringify(err).slice(0, 200));
-    }
+    console.log('📧 Email sent to:', toEmail);
   } catch (e) {
     console.error('Email send failed:', e.message);
   }
