@@ -12,20 +12,18 @@
   let activeInput = null;
   let isProcessing = false;
 
-  const API_BASE = 'https://upset-apes-sneeze.loca.lt/v1';
-
   // --- Actions ---
   const ACTIONS = {
-    rewrite: { label: '✨ Rewrite', prompt: 'Rewrite the following text to be more clear, professional, and engaging. Keep the same meaning and tone:' },
-    summarize: { label: '📝 Summarize', prompt: 'Summarize the following text concisely into key bullet points:' },
-    expand: { label: '📖 Expand', prompt: 'Expand the following text with more detail, examples, and depth while maintaining the original tone:' },
-    grammar: { label: '✅ Fix Grammar', prompt: 'Fix all grammar, spelling, and punctuation errors in the following text. Only return the corrected version:' },
-    shorter: { label: '✂️ Make Shorter', prompt: 'Make the following text more concise and shorter while preserving the key message:' },
-    translate_cn: { label: '🌐 → 中文', prompt: 'Translate the following text to Simplified Chinese:' },
-    translate_en: { label: '🌐 → English', prompt: 'Translate the following text to English:' },
-    casual: { label: '😊 More Casual', prompt: 'Rewrite the following text in a more casual, friendly tone:' },
-    professional: { label: '💼 Professional', prompt: 'Rewrite the following text in a highly professional, business-appropriate tone:' },
-    reply: { label: '💬 Smart Reply', prompt: 'Write a thoughtful, appropriate reply to the following message:' }
+    rewrite: { label: '✨ Rewrite', prompt: 'Rewrite the following text to be more clear, professional, and engaging. Keep the same meaning. Only return the rewritten text:' },
+    summarize: { label: '📝 Summarize', prompt: 'Summarize the following text concisely into key bullet points. Only return the summary:' },
+    expand: { label: '📖 Expand', prompt: 'Expand the following text with more detail, examples, and depth. Only return the expanded version:' },
+    grammar: { label: '✅ Fix Grammar', prompt: 'Fix all grammar, spelling, and punctuation errors. Only return the corrected version:' },
+    shorter: { label: '✂️ Make Shorter', prompt: 'Make this text more concise while keeping the key message. Only return the shortened version:' },
+    translate_cn: { label: '🌐 → 中文', prompt: 'Translate the following text to Simplified Chinese. Only return the translation:' },
+    translate_en: { label: '🌐 → English', prompt: 'Translate the following text to English. Only return the translation:' },
+    casual: { label: '😊 More Casual', prompt: 'Rewrite in a casual, friendly, conversational tone. Only return the rewritten text:' },
+    professional: { label: '💼 Professional', prompt: 'Rewrite in a highly professional, business tone. Only return the rewritten text:' },
+    reply: { label: '💬 Smart Reply', prompt: 'Write a thoughtful, appropriate reply to this message. Only return the reply:' }
   };
 
   // --- Safe DOM helper: appends to body when available ---
@@ -52,7 +50,7 @@
     try { el.remove(); } catch (_) {}
   }
 
-  // --- API ---
+  // --- API: Direct to DeepSeek (no backend needed!) ---
   async function getApiKey() {
     return new Promise(resolve => {
       chrome.storage.local.get(['apiKey'], result => {
@@ -64,30 +62,33 @@
   async function callAI(text, actionKey) {
     const apiKey = await getApiKey();
     if (!apiKey) {
-      throw new Error('Please set your API key in the extension popup');
+      throw new Error('Click the extension icon ⚡ and enter your DeepSeek API key. Get one free: platform.deepseek.com');
     }
 
     const action = ACTIONS[actionKey];
-    const response = await fetch(`${API_BASE}/write`, {
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': 'Bearer ' + apiKey
       },
       body: JSON.stringify({
-        action: actionKey,
-        prompt: action.prompt,
-        text: text
+        model: 'deepseek-chat',
+        max_tokens: 2048,
+        messages: [{ role: 'user', content: action.prompt + '\n\n' + text }]
       })
     });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || `API error: ${response.status}`);
+      if (response.status === 401) throw new Error('Invalid API key. Get one at platform.deepseek.com');
+      throw new Error(err.error?.message || 'API error: ' + response.status);
     }
 
     const data = await response.json();
-    return data.result;
+    const result = data.choices?.[0]?.message?.content;
+    if (!result) throw new Error('No response from AI');
+    return result.trim();
   }
 
   // --- UI ---

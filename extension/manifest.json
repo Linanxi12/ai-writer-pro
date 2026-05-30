@@ -21,8 +21,7 @@
     "activeTab"
   ],
   "host_permissions": [
-    "https://upset-apes-sneeze.loca.lt/*",
-    "https://api.aiwriter.pro/*"
+    "https://api.deepseek.com/*"
   ],
   "content_scripts": [
     {
