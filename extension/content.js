@@ -45,14 +45,35 @@
       chrome.storage.local.get(['apiKey'], r => resolve(r.apiKey || null));
     });
   }
+  async function getStorage(keys) {
+    return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+  }
 
   // --- API Key validation ---
   function isValidApiKey(key) {
     return key && key.startsWith('sk-') && key.length >= 35 && /^[a-zA-Z0-9_-]+$/.test(key);
   }
 
+  // --- Usage limit check ---
+  async function checkUsageLimit() {
+    const data = await getStorage(['usageCount', 'usageDate', 'dailyLimit', 'plan']);
+    const today = new Date().toDateString();
+    const count = data.usageDate === today ? (data.usageCount || 0) : 0;
+    const limit = data.dailyLimit || 20;
+    if (count >= limit) {
+      const plan = data.plan || 'Free';
+      throw new Error(plan === 'Free'
+        ? '🚫 Free limit (20/day). Upgrade to Pro: 500/day → xiaoqi.lemonsqueezy.com'
+        : '🚫 Daily limit reached (' + limit + '/day). Upgrade your plan for more.');
+    }
+    return true;
+  }
+
   // --- AI Call ---
   async function callAI(text, actionKey, signal) {
+    // Check usage before making API call
+    await checkUsageLimit();
+
     const apiKey = await getApiKey();
     if (!apiKey) {
       throw new Error('Click the extension icon and enter your DeepSeek API key. Get one free: platform.deepseek.com');
