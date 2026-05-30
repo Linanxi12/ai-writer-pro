@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Writer Pro</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>✨ AI Writer Pro</h1>
+      <span class="version">v1.0</span>
+    </header>
+
+    <section class="section">
+      <h2>🔑 API Key</h2>
+      <div class="input-group">
+        <input type="password" id="apiKey" placeholder="Enter your API key..." autocomplete="off">
+        <button id="saveKey" class="btn-primary">Save</button>
+      </div>
+      <p class="hint">Get your key at <a href="https://upset-apes-sneeze.loca.lt" target="_blank">aiwriter.pro</a></p>
+      <p id="keyStatus" class="status"></p>
+    </section>
+
+    <section class="section">
+      <h2>⌨️ Shortcuts</h2>
+      <div class="shortcut-list">
+        <div class="shortcut-item">
+          <kbd>Ctrl+Shift+K</kbd>
+          <span>Open AI Writer</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>Esc</kbd>
+          <span>Close popup</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>Select text</kbd>
+          <span>Auto-fills input</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>🛠️ Features</h2>
+      <ul class="feature-list">
+        <li>✨ Rewrite - Improve clarity & tone</li>
+        <li>📝 Summarize - Key points instantly</li>
+        <li>📖 Expand - Add depth & detail</li>
+        <li>✅ Fix Grammar - Auto-correct errors</li>
+        <li>🌐 Translate - EN ↔ 中文</li>
+        <li>💬 Smart Reply - Auto-generate replies</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>📊 Usage</h2>
+      <div class="usage-stats">
+        <div class="stat">
+          <span class="stat-value" id="usageCount">--</span>
+          <span class="stat-label">Requests today</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="planName">Free</span>
+          <span class="stat-label">Plan</span>
+        </div>
+      </div>
+      <a href="https://upset-apes-sneeze.loca.lt/pricing" target="_blank" class="upgrade-link">Upgrade to Pro →</a>
+    </section>
+
+    <footer class="footer">
+      <a href="https://upset-apes-sneeze.loca.lt" target="_blank">aiwriter.pro</a>
+      <span>·</span>
+      <a href="https://upset-apes-sneeze.loca.lt/privacy" target="_blank">Privacy</a>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
