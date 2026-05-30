@@ -2,7 +2,6 @@
 (function() {
   'use strict';
 
-  // Prevent multiple instances
   if (window.__aiWriterLoaded) return;
   window.__aiWriterLoaded = true;
 
@@ -11,6 +10,9 @@
   let popup = null;
   let activeInput = null;
   let isProcessing = false;
+  let abortController = null;
+  let lastResult = '';          // Store raw result for copy/replace
+  let hasAutoFilled = false;   // Only auto-fill once per popup open
 
   // --- Actions ---
   const ACTIONS = {
@@ -26,96 +28,85 @@
     reply: { label: '💬 Smart Reply', prompt: 'Write a thoughtful, appropriate reply to this message. Only return the reply:' }
   };
 
-  // --- Safe DOM helper: appends to body when available ---
+  // --- Safe DOM helpers ---
   function safeAppend(el, parent) {
     const target = parent || document.body;
     if (!target) return false;
-    try {
-      target.appendChild(el);
-      return true;
-    } catch (e) {
-      // If body is not available (e.g., frameset pages), try documentElement
-      if (document.documentElement && target === document.body) {
-        try {
-          document.documentElement.appendChild(el);
-          return true;
-        } catch (_) {}
-      }
-      return false;
-    }
+    try { target.appendChild(el); return true; } catch (e) { return false; }
   }
-
   function safeRemove(el) {
     if (!el || !el.parentNode) return;
     try { el.remove(); } catch (_) {}
   }
 
-  // --- API: Direct to DeepSeek (no backend needed!) ---
+  // --- API Key ---
   async function getApiKey() {
     return new Promise(resolve => {
-      chrome.storage.local.get(['apiKey'], result => {
-        resolve(result.apiKey || null);
-      });
+      chrome.storage.local.get(['apiKey'], r => resolve(r.apiKey || null));
     });
   }
 
-  async function callAI(text, actionKey) {
+  // --- API Key validation ---
+  function isValidApiKey(key) {
+    return key && key.startsWith('sk-') && key.length >= 35 && /^[a-zA-Z0-9_-]+$/.test(key);
+  }
+
+  // --- AI Call ---
+  async function callAI(text, actionKey, signal) {
     const apiKey = await getApiKey();
     if (!apiKey) {
-      throw new Error('Click the extension icon ⚡ and enter your DeepSeek API key. Get one free: platform.deepseek.com');
+      throw new Error('Click the extension icon and enter your DeepSeek API key. Get one free: platform.deepseek.com');
+    }
+    if (!isValidApiKey(apiKey)) {
+      throw new Error('Invalid API key format. It should start with "sk-" and be at least 35 characters. Get one at platform.deepseek.com');
     }
 
     const action = ACTIONS[actionKey];
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + apiKey
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
       body: JSON.stringify({
         model: 'deepseek-chat',
         max_tokens: 2048,
         messages: [{ role: 'user', content: action.prompt + '\n\n' + text }]
-      })
+      }),
+      signal
     });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      if (response.status === 401) throw new Error('Invalid API key. Get one at platform.deepseek.com');
+      if (response.status === 401) throw new Error('Invalid API key. Get a new one at platform.deepseek.com');
+      if (response.status === 429) throw new Error('Rate limit reached. Please wait a moment and try again.');
+      if (response.status === 402) throw new Error('DeepSeek account balance is low. Please top up at platform.deepseek.com');
       throw new Error(err.error?.message || 'API error: ' + response.status);
     }
 
     const data = await response.json();
     const result = data.choices?.[0]?.message?.content;
-    if (!result) throw new Error('No response from AI');
+    if (!result) throw new Error('No response from AI. Please try again.');
     return result.trim();
   }
 
-  // --- UI ---
+  // --- UI: Floating Button ---
   function createFloatingButton() {
     const btn = document.createElement('button');
     btn.className = 'aiw-floating-btn';
     btn.innerHTML = '✨';
     btn.title = 'AI Writer Pro (Ctrl+Shift+K)';
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      togglePopup();
-    });
+    btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); togglePopup(); });
     safeAppend(btn);
     return btn;
   }
 
+  // --- UI: Popup ---
   function createPopup() {
     const el = document.createElement('div');
     el.className = 'aiw-popup';
     el.style.display = 'none';
-    el.style.left = '24px';
-    el.style.top = '100px';
     el.innerHTML = `
       <div class="aiw-popup-header">
         <h3>✨ AI Writer Pro</h3>
-        <button class="aiw-popup-close">×</button>
+        <button class="aiw-popup-close" title="Close (Esc)">×</button>
       </div>
       <div class="aiw-popup-body">
         <textarea class="aiw-input-area" placeholder="Type or paste text here, or select text on the page..."></textarea>
@@ -128,26 +119,31 @@
       </div>
     `;
 
-    // Close button
-    el.querySelector('.aiw-popup-close').addEventListener('click', (e) => {
-      e.stopPropagation();
-      hidePopup();
+    el.querySelector('.aiw-popup-close').addEventListener('click', (e) => { e.stopPropagation(); hidePopup(); });
+
+    const textarea = el.querySelector('.aiw-input-area');
+
+    // Auto-fill from selection on first focus
+    textarea.addEventListener('focus', () => {
+      if (!hasAutoFilled && !textarea.value) {
+        const sel = window.getSelection().toString().trim();
+        if (sel) { textarea.value = sel; hasAutoFilled = true; }
+      }
     });
 
-    // Textarea auto-fill from selection
-    const textarea = el.querySelector('.aiw-input-area');
-    textarea.addEventListener('focus', () => {
-      const selection = window.getSelection().toString().trim();
-      if (selection && !textarea.value) {
-        textarea.value = selection;
+    // Clear result when user types new text
+    textarea.addEventListener('input', () => {
+      const resultEl = el.querySelector('.aiw-result');
+      if (resultEl.style.display !== 'none') {
+        resultEl.style.display = 'none';
+        lastResult = '';
       }
     });
 
     // Action buttons
     el.querySelectorAll('.aiw-action-btn[data-action]').forEach(btn => {
       btn.addEventListener('click', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
         const action = btn.dataset.action;
         const text = textarea.value.trim();
         if (!text) {
@@ -156,7 +152,7 @@
           setTimeout(() => textarea.style.borderColor = '', 1500);
           return;
         }
-        await handleAction(action, text, el);
+        await handleAction(action, text, el, textarea);
       });
     });
 
@@ -164,13 +160,15 @@
     return el;
   }
 
-  async function handleAction(actionKey, text, popupEl) {
+  // --- Handle AI Action ---
+  async function handleAction(actionKey, text, popupEl, textarea) {
     if (isProcessing) return;
     isProcessing = true;
 
     const resultEl = popupEl.querySelector('.aiw-result');
     const actionBtns = popupEl.querySelectorAll('.aiw-action-btn');
 
+    // Show loading with cancel button
     resultEl.style.display = 'block';
     resultEl.innerHTML = `
       <div class="aiw-loading">
@@ -178,66 +176,104 @@
         <div class="aiw-loading-dot"></div>
         <div class="aiw-loading-dot"></div>
         <div class="aiw-loading-dot"></div>
+        <button class="aiw-action-btn aiw-cancel-btn" style="margin-left:12px;">Cancel</button>
       </div>
     `;
     actionBtns.forEach(b => b.disabled = true);
 
+    // Cancel handler
+    abortController = new AbortController();
+    resultEl.querySelector('.aiw-cancel-btn')?.addEventListener('click', () => {
+      abortController.abort();
+      isProcessing = false;
+      actionBtns.forEach(b => b.disabled = false);
+      resultEl.innerHTML = '<div style="color:#94a3b8;font-size:13px;padding:12px;">Cancelled.</div>';
+      abortController = null;
+    });
+
     try {
-      const result = await callAI(text, actionKey);
-      resultEl.innerHTML = result.replace(/\n/g, '<br>');
+      lastResult = await callAI(text, actionKey, abortController.signal);
+
+      // Track usage
+      chrome.runtime.sendMessage({ type: 'incrementUsage' }).catch(() => {});
+
+      // Show result
+      resultEl.innerHTML = lastResult.replace(/\n/g, '<br>');
       resultEl.innerHTML += `
         <div class="aiw-result-actions">
           <button class="aiw-action-btn aiw-primary aiw-copy-btn">📋 Copy</button>
-          <button class="aiw-action-btn aiw-replace-btn">🔄 Replace Input</button>
+          <button class="aiw-action-btn aiw-replace-btn">🔄 Replace</button>
+          <button class="aiw-action-btn aiw-retry-btn" data-action="${actionKey}">🔄 Retry</button>
         </div>
       `;
 
+      // Copy — uses stored lastResult, not innerText
       resultEl.querySelector('.aiw-copy-btn').addEventListener('click', (e) => {
         e.stopPropagation();
-        const plain = resultEl.innerText.replace('📋 Copy', '').replace('🔄 Replace Input', '').trim();
-        navigator.clipboard.writeText(plain).catch(() => {});
-        showToast('Copied! ✓');
+        navigator.clipboard.writeText(lastResult).then(() => showToast('Copied! ✓')).catch(() => showToast('Copy failed'));
       });
 
+      // Replace into textarea and tracked active input
       resultEl.querySelector('.aiw-replace-btn').addEventListener('click', (e) => {
         e.stopPropagation();
-        const plain = resultEl.innerText.replace('📋 Copy', '').replace('🔄 Replace Input', '').trim();
-        const ta = popupEl.querySelector('.aiw-input-area');
-        ta.value = plain;
-        if (activeInput) {
-          activeInput.value = plain;
+        textarea.value = lastResult;
+        if (activeInput && document.contains(activeInput)) {
+          activeInput.value = lastResult;
           activeInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
         showToast('Replaced! ✓');
       });
+
+      // Retry
+      resultEl.querySelector('.aiw-retry-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleAction(actionKey, text, popupEl, textarea);
+      });
+
     } catch (err) {
-      resultEl.innerHTML = `<div style="color:#ef4444;font-size:13px;">⚠️ ${err.message}</div>`;
+      if (err.name === 'AbortError') return; // Handled by cancel
+      resultEl.innerHTML = `<div style="color:#ef4444;font-size:13px;padding:12px;">⚠️ ${escapeHtml(err.message)}</div>`;
+      resultEl.innerHTML += `<div class="aiw-result-actions"><button class="aiw-action-btn aiw-retry-btn" data-action="${actionKey}">🔄 Retry</button></div>`;
+      resultEl.querySelector('.aiw-retry-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleAction(actionKey, text, popupEl, textarea);
+      });
     } finally {
       isProcessing = false;
+      abortController = null;
       actionBtns.forEach(b => b.disabled = false);
     }
   }
 
+  // --- Escape HTML to prevent XSS ---
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // --- Popup Positioning ---
   function positionPopup() {
     if (!popup || popup.style.display === 'none') return;
     if (!floatingBtn) return;
-
     try {
       const btnRect = floatingBtn.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const pw = 420;
+      const pw = Math.min(420, vw - 24);
+      const ph = Math.min(560, vh - 80);
       let left = btnRect.left - pw + 52;
-      let top = btnRect.top - 540;
+      let top = btnRect.top - ph - 12;
 
       if (left < 12) left = 12;
       if (left + pw > vw - 12) left = vw - pw - 12;
       if (top < 60) top = btnRect.bottom + 12;
-      if (top + 540 > vh - 12) top = vh - 540 - 12;
-      if (top < 12) top = 12;
+      if (top + ph > vh - 12) top = Math.max(12, vh - ph - 12);
 
       popup.style.left = left + 'px';
       popup.style.top = top + 'px';
+      popup.style.width = pw + 'px';
+      popup.style.maxHeight = ph + 'px';
     } catch (_) {}
   }
 
@@ -245,16 +281,31 @@
     if (!popup) popup = createPopup();
     if (!popup) return;
     popup.style.display = 'block';
+    hasAutoFilled = false;
+    lastResult = '';
     positionPopup();
 
     const textarea = popup.querySelector('.aiw-input-area');
-    const selection = window.getSelection().toString().trim();
-    if (selection) textarea.value = selection;
+    const sel = window.getSelection().toString().trim();
+    if (sel && !textarea.value) { textarea.value = sel; hasAutoFilled = true; }
+
+    // Reset result
+    const resultEl = popup.querySelector('.aiw-result');
+    if (resultEl) resultEl.style.display = 'none';
+
     setTimeout(() => textarea.focus(), 100);
   }
 
   function hidePopup() {
-    if (popup) popup.style.display = 'none';
+    if (popup) {
+      popup.style.display = 'none';
+      // Cancel any in-progress request
+      if (abortController) {
+        abortController.abort();
+        abortController = null;
+        isProcessing = false;
+      }
+    }
   }
 
   function togglePopup() {
@@ -288,40 +339,32 @@
   document.addEventListener('focusin', (e) => {
     const el = e.target;
     if (el.matches && el.matches('input[type="text"], input:not([type]), input[type="search"], input[type="email"], input[type="url"], textarea, [contenteditable="true"]')) {
-      activeInput = el;
+      // Don't track our own textarea
+      if (!el.classList.contains('aiw-input-area')) {
+        activeInput = el;
+      }
     }
   });
 
-  // --- Init: wait for body ---
+  // --- Init ---
   function init() {
-    if (!document.body) {
-      // Body not ready yet — rare but possible (e.g., scripts in <head> on slow pages)
-      setTimeout(init, 50);
-      return;
-    }
+    if (!document.body) { setTimeout(init, 50); return; }
     floatingBtn = createFloatingButton();
     popup = createPopup();
     window.addEventListener('resize', positionPopup);
     window.addEventListener('scroll', positionPopup);
   }
 
-  // Run as soon as body is available
   if (document.body) {
     init();
-  } else {
-    // Wait for body to appear (handles edge cases like frames, XHTML, etc.)
+  } else if (document.documentElement) {
     const observer = new MutationObserver(() => {
-      if (document.body) {
-        observer.disconnect();
-        init();
-      }
+      if (document.body) { observer.disconnect(); init(); }
     });
-    observer.observe(document.documentElement || document, { childList: true, subtree: true });
-    // Fallback timeout
-    setTimeout(() => {
-      observer.disconnect();
-      if (!floatingBtn) init();
-    }, 3000);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    setTimeout(() => { observer.disconnect(); if (!floatingBtn) init(); }, 3000);
+  } else {
+    setTimeout(init, 100);
   }
 
 })();

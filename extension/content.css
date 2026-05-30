@@ -208,6 +208,18 @@
   100% { opacity: 0; }
 }
 
+/* Result action buttons */
+.aiw-retry-btn,
+.aiw-cancel-btn {
+  font-size: 12px !important;
+}
+
+.aiw-loading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
   .aiw-popup {
