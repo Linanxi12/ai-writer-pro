@@ -597,6 +597,57 @@ body {
   font-size: 13px;
 }
 
+/* Download */
+.download {
+  padding: 80px 0;
+  background: var(--bg);
+}
+
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 48px;
+}
+
+.download-card {
+  background: white;
+  padding: 32px 24px;
+  border-radius: var(--radius);
+  text-align: center;
+  border: 1px solid #e2e8f0;
+}
+
+.download-icon { font-size: 40px; display: block; margin-bottom: 14px; }
+
+.download-card h3 {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.download-card p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+
+.download-card code {
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.download-size {
+  display: block;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 8px;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .hero h1 { font-size: 36px; }
